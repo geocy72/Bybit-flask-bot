@@ -1,0 +1,8 @@
+services:
+- type: web
+name: bybit-bot
+env: python
+buildcommand: pip install -r
+requirements.txt
+startcommand: pythom webhook.py
+plan: free
