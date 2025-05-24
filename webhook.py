@@ -3,7 +3,7 @@ from pybit.unified_trading import HTTP
 import os
 
 # === API KEYS ===
-BYBIT_API_KEY = "YOUR_API_KEY"
+BYBIT_API_KEY = "ZRyWx3GREmB9LQET4u"
 BYBIT_API_SECRET = "FzvPkH7tPuyDDZs0c7AAAskl1srtTvD4l8In"
 
 # === Bybit Client ===
