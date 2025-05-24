@@ -4,7 +4,7 @@ import os
 
 # === API KEYS ===
 BYBIT_API_KEY = "YOUR_API_KEY"
-BYBIT_API_SECRET = "YOUR_API_SECRET"
+BYBIT_API_SECRET = "FzvPkH7tPuyDDZs0c7AAAskl1srtTvD4l8In"
 
 # === Bybit Client ===
 session = HTTP(
