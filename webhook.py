@@ -5,12 +5,12 @@ from datetime import datetime
 app = Flask(__name__)
 
 # === API KEYS ===
-BYBIT_API_KEY = "ZRyWx3GREmB9LQET4u"
-BYBIT_API_SECRET = "FzvPkH7tPuyDDZs0c7AAAskl1srtTvD4l8In"
+BYBIT_API_KEY = "P6TXlLLgZw5fCElvQT"
+BYBIT_API_SECRET = "kFMlB7v5XwdWWbwViiqyF2vzPL3RGlxEj3Te"
 
 # === Bybit Client ===
 session = HTTP(
-    testnet=True,  # True για testnet, False για live
+    testnet=False,  # True για testnet, False για live
     api_key=BYBIT_API_KEY,
     api_secret=BYBIT_API_SECRET
 )
