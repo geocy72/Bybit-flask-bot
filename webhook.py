@@ -19,7 +19,7 @@ log_buffer = []
 # === Ρυθμίσεις ===
 TP_PERCENT = 3.0
 SL_PERCENT = 1.5
-MIN_QTY = 0.001  # Ελάχιστη ποσότητα για BTCUSDT στο testnet
+MIN_QTY = 0.001  # Ελάχιστο για BTCUSDT
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -43,7 +43,7 @@ def webhook():
             log_buffer.append(f"[{timestamp}] CANCEL ALL → {result}")
             return jsonify({"status": "cancelled", "response": result}), 200
 
-        # === Άνοιγμα εντολής αγοράς/πώλησης ===
+        # === Άνοιγμα κύριας θέσης ===
         order = session.place_order(
             category="linear",
             symbol=symbol,
@@ -54,37 +54,42 @@ def webhook():
         )
         log_buffer.append(f"[{timestamp}] BYBIT RESPONSE: {order}")
 
-        # === Απόκτηση τρέχουσας τιμής αγοράς ===
+        # === Τιμή αγοράς ===
         ticker = session.get_tickers(category="linear", symbol=symbol)
         price = float(ticker["result"]["list"][0]["lastPrice"])
 
-        # === Υπολογισμός TP / SL ===
+        # === Υπολογισμός TP/SL ===
         tp_price = round(price * (1 + TP_PERCENT / 100), 2) if side == "Buy" else round(price * (1 - TP_PERCENT / 100), 2)
         sl_price = round(price * (1 - SL_PERCENT / 100), 2) if side == "Buy" else round(price * (1 + SL_PERCENT / 100), 2)
         opposite = "Sell" if side == "Buy" else "Buy"
+        trigger_dir = 1 if side == "Buy" else 2
 
-        # === Take Profit (Limit) ===
+        # === Take Profit (Triggered Market) ===
         session.place_order(
             category="linear",
             symbol=symbol,
             side=opposite,
-            order_type="Limit",
-            price=tp_price,
-            qty=qty,
-            time_in_force="PostOnly",
-            reduce_only=True
-        )
-
-        # === Stop Loss (StopMarket) ===
-        session.place_order(
-            category="linear",
-            symbol=symbol,
-            side=opposite,
-            order_type="StopMarket",
-            stop_px=sl_price,
+            order_type="Market",
             qty=qty,
             time_in_force="GoodTillCancel",
-            reduce_only=True
+            reduce_only=True,
+            trigger_by="LastPrice",
+            triggerPrice=tp_price,
+            triggerDirection=trigger_dir
+        )
+
+        # === Stop Loss (Triggered Market) ===
+        session.place_order(
+            category="linear",
+            symbol=symbol,
+            side=opposite,
+            order_type="Market",
+            qty=qty,
+            time_in_force="GoodTillCancel",
+            reduce_only=True,
+            trigger_by="LastPrice",
+            triggerPrice=sl_price,
+            triggerDirection=trigger_dir
         )
 
         log_buffer.append(f"[{timestamp}] TP @ {tp_price} | SL @ {sl_price}")
