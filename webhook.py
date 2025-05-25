@@ -63,8 +63,7 @@ def webhook():
         price = float(order['result'].get('orderPrice', 0))
         if price == 0:
             ticker = session.get_market_ticker(category="linear", symbol=symbol)
-price = float(ticker["result"]["list"][0]["lastPrice"])
-
+            price = float(ticker["result"]["list"][0]["lastPrice"])
 
         # === Υπολογισμός TP & SL ===
         tp_price = round(price * (1 + TP_PERCENT / 100), 2) if side == "Buy" else round(price * (1 - TP_PERCENT / 100), 2)
