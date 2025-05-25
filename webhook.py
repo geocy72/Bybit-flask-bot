@@ -31,12 +31,23 @@ def webhook():
 
     action = data.get("action")
     symbol = data.get("symbol")
-    qty = float(data.get("qty"))
+    qty = float(data.get("qty", 0))
     order_type = data.get("type", "market").lower()
+
+    # === CANCEL ALL ===
+    if action == "cancel_all":
+        try:
+            result = session.cancel_all_orders(category="linear", symbol=symbol)
+            log_buffer.append(f"[{timestamp}] CANCEL ALL → {result}")
+            return jsonify({"status": "cancelled", "response": result}), 200
+        except Exception as e:
+            log_buffer.append(f"[{timestamp}] CANCEL ERROR: {str(e)}")
+            return jsonify({"status": "error", "message": str(e)}), 400
+
     side = "Buy" if action == "buy" else "Sell"
 
     try:
-        # === Open position ===
+        # === Άνοιγμα θέσης ===
         order = session.place_order(
             category="linear",
             symbol=symbol,
@@ -48,18 +59,18 @@ def webhook():
         log_buffer.append(f"[{timestamp}] BYBIT RESPONSE: {order}")
         print("Order response:", order)
 
-        # === Get price if missing ===
+        # === Λήψη τιμής εισόδου ===
         price = float(order['result'].get('orderPrice', 0))
         if price == 0:
             ticker = session.get_ticker(category="linear", symbol=symbol)
             price = float(ticker["result"]["list"][0]["lastPrice"])
 
-        # === Calculate TP/SL prices ===
+        # === Υπολογισμός TP & SL ===
         tp_price = round(price * (1 + TP_PERCENT / 100), 2) if side == "Buy" else round(price * (1 - TP_PERCENT / 100), 2)
         sl_price = round(price * (1 - SL_PERCENT / 100), 2) if side == "Buy" else round(price * (1 + SL_PERCENT / 100), 2)
         opposite_side = "Sell" if side == "Buy" else "Buy"
 
-        # === TP order ===
+        # === Take Profit ===
         tp = session.place_order(
             category="linear",
             symbol=symbol,
@@ -71,7 +82,7 @@ def webhook():
             reduce_only=True
         )
 
-        # === SL order ===
+        # === Stop Loss ===
         sl = session.place_order(
             category="linear",
             symbol=symbol,
@@ -104,7 +115,6 @@ def clear_logs():
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5000)
-
 
 
 
