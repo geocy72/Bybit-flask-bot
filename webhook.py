@@ -1,8 +1,8 @@
 from flask import Flask, request, jsonify
 from pybit.unified_trading import HTTP
-import os
 from datetime import datetime
 
+app = Flask(__name__)
 
 # === API KEYS ===
 BYBIT_API_KEY = "ZRyWx3GREmB9LQET4u"
@@ -10,29 +10,20 @@ BYBIT_API_SECRET = "FzvPkH7tPuyDDZs0c7AAAskl1srtTvD4l8In"
 
 # === Bybit Client ===
 session = HTTP(
-    testnet=False,  # True για demo.bybit.com, False για live
+    testnet=True,  # True για testnet, False για live
     api_key=BYBIT_API_KEY,
     api_secret=BYBIT_API_SECRET
 )
 
-app = Flask(__name__)
+# === Internal log buffer ===
+log_buffer = []
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.json
+    timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    log_buffer.append(f"[{timestamp}] ALERT RECEIVED: {data}")
     print("Received alert:", data)
-@app.route('/logs', methods=['GET'])
-def show_logs():
-    try:
-        with open("webhook_log.txt", "r") as f:
-            content = f.read()
-        return f"<pre>{content}</pre>"
-    except Exception as e:
-        return f"Error reading log: {str(e)}", 500
-
-    # === Save to log file ===
-    with open("webhook_log.txt", "a") as f:
-        f.write(f"[{datetime.utcnow()}] ALERT RECEIVED: {data}\n")
 
     action = data.get("action")
     symbol = data.get("symbol")
@@ -49,18 +40,23 @@ def show_logs():
             qty=qty,
             time_in_force="GoodTillCancel"
         )
+        log_buffer.append(f"[{timestamp}] BYBIT RESPONSE: {response}")
         print("Order response:", response)
-
-        with open("webhook_log.txt", "a") as f:
-            f.write(f"[{datetime.utcnow()}] BYBIT RESPONSE: {response}\n")
-
         return jsonify({"status": "ok", "order": response}), 200
     except Exception as e:
+        log_buffer.append(f"[{timestamp}] ERROR: {str(e)}")
         print("Error placing order:", str(e))
-        with open("webhook_log.txt", "a") as f:
-            f.write(f"[{datetime.utcnow()}] ERROR: {str(e)}\n")
-
         return jsonify({"status": "error", "message": str(e)}), 400
+
+@app.route('/logs', methods=['GET'])
+def show_logs():
+    if not log_buffer:
+        return "No logs yet."
+    return "<pre>" + "\n".join(log_buffer[-100:]) + "</pre>"
+
+if __name__ == '__main__':
+    app.run(host="0.0.0.0", port=5000)
+
 
 
 if __name__ == '__main__':
