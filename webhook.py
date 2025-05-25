@@ -21,6 +21,14 @@ app = Flask(__name__)
 def webhook():
     data = request.json
     print("Received alert:", data)
+@app.route('/logs', methods=['GET'])
+def show_logs():
+    try:
+        with open("webhook_log.txt", "r") as f:
+            content = f.read()
+        return f"<pre>{content}</pre>"
+    except Exception as e:
+        return f"Error reading log: {str(e)}", 500
 
     # === Save to log file ===
     with open("webhook_log.txt", "a") as f:
