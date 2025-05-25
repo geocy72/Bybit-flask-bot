@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from pybit.unified_trading import HTTP
 from datetime import datetime
+from time import sleep
 
 app = Flask(__name__)
 
@@ -8,19 +9,18 @@ app = Flask(__name__)
 BYBIT_API_KEY = "BbOKjCFtOMb6Gh01Gh"
 BYBIT_API_SECRET = "GbTnD3cQC1J4vj7WFf8Ahd247AEA8GFzjOAA"
 
-# === Bybit session ===
 session = HTTP(
-    testnet=True,  # True για testnet, False για live
+    testnet=True,
     api_key=BYBIT_API_KEY,
     api_secret=BYBIT_API_SECRET
 )
 
-# === Log buffer (in-memory) ===
+# === Log buffer ===
 log_buffer = []
 
-# === Take Profit / Stop Loss ποσοστά ===
-TP_PERCENT = 3.0    # Π.χ. 3% πάνω από την είσοδο
-SL_PERCENT = 1.5    # Π.χ. 1.5% κάτω από την είσοδο
+# === TP/SL settings ===
+TP_PERCENT = 3.0
+SL_PERCENT = 1.5
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -31,23 +31,18 @@ def webhook():
 
     action = data.get("action")
     symbol = data.get("symbol")
-    qty = float(data.get("qty", 0))
+    qty = float(data.get("qty"))
     order_type = data.get("type", "market").lower()
-
-    # === CANCEL ALL ===
-    if action == "cancel_all":
-        try:
-            result = session.cancel_all_orders(category="linear", symbol=symbol)
-            log_buffer.append(f"[{timestamp}] CANCEL ALL → {result}")
-            return jsonify({"status": "cancelled", "response": result}), 200
-        except Exception as e:
-            log_buffer.append(f"[{timestamp}] CANCEL ERROR: {str(e)}")
-            return jsonify({"status": "error", "message": str(e)}), 400
-
     side = "Buy" if action == "buy" else "Sell"
 
     try:
-        # === Άνοιγμα θέσης ===
+        # === Cancel all orders ===
+        if action == "cancel_all":
+            result = session.cancel_all_orders(category="linear", symbol=symbol)
+            log_buffer.append(f"[{timestamp}] CANCEL ALL → {result}")
+            return jsonify({"status": "cancelled", "response": result}), 200
+
+        # === Open market order ===
         order = session.place_order(
             category="linear",
             symbol=symbol,
@@ -59,22 +54,22 @@ def webhook():
         log_buffer.append(f"[{timestamp}] BYBIT RESPONSE: {order}")
         print("Order response:", order)
 
-        # === Λήψη τιμής εισόδου ===
+        # === Get current price ===
         price = float(order['result'].get('orderPrice', 0))
         if price == 0:
             ticker = session.get_market_ticker(category="linear", symbol=symbol)
             price = float(ticker["result"]["list"][0]["lastPrice"])
 
-        # === Υπολογισμός TP & SL ===
+        # === Calculate TP & SL ===
         tp_price = round(price * (1 + TP_PERCENT / 100), 2) if side == "Buy" else round(price * (1 - TP_PERCENT / 100), 2)
         sl_price = round(price * (1 - SL_PERCENT / 100), 2) if side == "Buy" else round(price * (1 + SL_PERCENT / 100), 2)
-        opposite_side = "Sell" if side == "Buy" else "Buy"
+        opposite = "Sell" if side == "Buy" else "Buy"
 
         # === Take Profit ===
-        tp = session.place_order(
+        session.place_order(
             category="linear",
             symbol=symbol,
-            side=opposite_side,
+            side=opposite,
             order_type="Limit",
             price=tp_price,
             qty=qty,
@@ -83,10 +78,10 @@ def webhook():
         )
 
         # === Stop Loss ===
-        sl = session.place_order(
+        session.place_order(
             category="linear",
             symbol=symbol,
-            side=opposite_side,
+            side=opposite,
             order_type="StopMarket",
             stop_px=sl_price,
             qty=qty,
@@ -114,35 +109,36 @@ def clear_logs():
     return "🧹 Logs καθαρίστηκαν επιτυχώς!"
 
 @app.route('/status', methods=['GET'])
-def status():
+def show_status():
     try:
         wallet = session.get_wallet_balance(accountType="UNIFIED")
-        positions = session.get_positions(category="linear")
+        equity = wallet["result"]["list"][0]["totalEquity"]
 
-        wallet_info = wallet['result']['list'][0]['totalEquity']
-        open_positions = [
-            {
-                "symbol": p["symbol"],
-                "side": p["side"],
-                "size": p["size"],
-                "entryPrice": p["entryPrice"],
-                "unrealizedPnl": p["unrealisedPnl"]
-            }
-            for p in positions['result']['list'] if float(p["size"]) > 0
-        ]
+        instruments = session.get_instruments_info(category="linear")
+        symbols = [x["symbol"] for x in instruments["result"]["list"]]
+
+        open_positions = []
+
+        for sym in symbols:
+            pos = session.get_positions(category="linear", symbol=sym)
+            info = pos["result"]["list"]
+            if info and float(info[0]["size"]) > 0:
+                open_positions.append({
+                    "symbol": info[0]["symbol"],
+                    "side": info[0]["side"],
+                    "size": info[0]["size"],
+                    "entryPrice": info[0]["entryPrice"],
+                    "unrealizedPnl": info[0]["unrealizedPnl"]
+                })
+            sleep(0.1)
 
         return jsonify({
-            "wallet_total_equity": wallet_info,
+            "wallet_total_equity": equity,
             "open_positions": open_positions
-        }), 200
+        })
 
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return jsonify({"status": "error", "message": str(e)}), 400
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5000)
-
-
-
-
-
