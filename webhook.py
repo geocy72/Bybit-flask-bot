@@ -9,7 +9,7 @@ BYBIT_API_KEY = "BbOKjCFtOMb6Gh01Gh"
 BYBIT_API_SECRET = "GbTnD3cQC1J4vj7WFf8Ahd247AEA8GFzjOAA"
 
 session = HTTP(
-    testnet=True,
+    testnet=True,  # True για testnet
     api_key=BYBIT_API_KEY,
     api_secret=BYBIT_API_SECRET
 )
@@ -19,7 +19,7 @@ log_buffer = []
 # === Ρυθμίσεις ===
 TP_PERCENT = 3.0
 SL_PERCENT = 1.5
-MIN_QTY = 0.001  # Ελάχιστο για BTCUSDT
+MIN_QTY = 0.001  # ελάχιστο για BTCUSDT
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -43,7 +43,7 @@ def webhook():
             log_buffer.append(f"[{timestamp}] CANCEL ALL → {result}")
             return jsonify({"status": "cancelled", "response": result}), 200
 
-        # === Άνοιγμα κύριας θέσης ===
+        # === Κύρια εντολή (Buy/Sell) ===
         order = session.place_order(
             category="linear",
             symbol=symbol,
@@ -54,31 +54,16 @@ def webhook():
         )
         log_buffer.append(f"[{timestamp}] BYBIT RESPONSE: {order}")
 
-        # === Τιμή αγοράς ===
+        # === Απόκτηση τιμής
         ticker = session.get_tickers(category="linear", symbol=symbol)
         price = float(ticker["result"]["list"][0]["lastPrice"])
 
-        # === Υπολογισμός TP/SL ===
-        tp_price = round(price * (1 + TP_PERCENT / 100), 2) if side == "Buy" else round(price * (1 - TP_PERCENT / 100), 2)
+        # === Υπολογισμός μόνο SL (προαιρετικά TP later)
         sl_price = round(price * (1 - SL_PERCENT / 100), 2) if side == "Buy" else round(price * (1 + SL_PERCENT / 100), 2)
         opposite = "Sell" if side == "Buy" else "Buy"
         trigger_dir = 1 if side == "Buy" else 2
 
-        # === Take Profit (Triggered Market) ===
-        session.place_order(
-            category="linear",
-            symbol=symbol,
-            side=opposite,
-            order_type="Market",
-            qty=qty,
-            time_in_force="GoodTillCancel",
-            reduce_only=True,
-            trigger_by="LastPrice",
-            triggerPrice=tp_price,
-            triggerDirection=trigger_dir
-        )
-
-        # === Stop Loss (Triggered Market) ===
+        # === Stop Loss (triggered market)
         session.place_order(
             category="linear",
             symbol=symbol,
@@ -92,7 +77,7 @@ def webhook():
             triggerDirection=trigger_dir
         )
 
-        log_buffer.append(f"[{timestamp}] TP @ {tp_price} | SL @ {sl_price}")
+        log_buffer.append(f"[{timestamp}] SL set @ {sl_price}")
         return jsonify({"status": "ok", "order": order}), 200
 
     except Exception as e:
@@ -112,4 +97,3 @@ def clear_logs():
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5000)
-
