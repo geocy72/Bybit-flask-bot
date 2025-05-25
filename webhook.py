@@ -113,6 +113,32 @@ def clear_logs():
     log_buffer.clear()
     return "🧹 Logs καθαρίστηκαν επιτυχώς!"
 
+@app.route('/status', methods=['GET'])
+def status():
+    try:
+        wallet = session.get_wallet_balance(accountType="UNIFIED")
+        positions = session.get_positions(category="linear")
+
+        wallet_info = wallet['result']['list'][0]['totalEquity']
+        open_positions = [
+            {
+                "symbol": p["symbol"],
+                "side": p["side"],
+                "size": p["size"],
+                "entryPrice": p["entryPrice"],
+                "unrealizedPnl": p["unrealisedPnl"]
+            }
+            for p in positions['result']['list'] if float(p["size"]) > 0
+        ]
+
+        return jsonify({
+            "wallet_total_equity": wallet_info,
+            "open_positions": open_positions
+        }), 200
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5000)
 
