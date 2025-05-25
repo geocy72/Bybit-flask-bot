@@ -8,18 +8,19 @@ app = Flask(__name__)
 BYBIT_API_KEY = "BbOKjCFtOMb6Gh01Gh"
 BYBIT_API_SECRET = "GbTnD3cQC1J4vj7WFf8Ahd247AEA8GFzjOAA"
 
+# === Bybit session ===
 session = HTTP(
-    testnet=True,  # True = testnet, False = live
+    testnet=True,  # True για testnet, False για live
     api_key=BYBIT_API_KEY,
     api_secret=BYBIT_API_SECRET
 )
 
-# === Logging buffer ===
+# === Log buffer (in-memory) ===
 log_buffer = []
 
-# === TP/SL ΡΥΘΜΙΣΕΙΣ ===
-TP_PERCENT = 3.0    # % πάνω από τιμή εισόδου
-SL_PERCENT = 1.5    # % κάτω από τιμή εισόδου
+# === Take Profit / Stop Loss ποσοστά ===
+TP_PERCENT = 3.0    # Π.χ. 3% πάνω από την είσοδο
+SL_PERCENT = 1.5    # Π.χ. 1.5% κάτω από την είσοδο
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -35,7 +36,7 @@ def webhook():
     side = "Buy" if action == "buy" else "Sell"
 
     try:
-        # === Άνοιγμα θέσης ===
+        # === Open position ===
         order = session.place_order(
             category="linear",
             symbol=symbol,
@@ -47,18 +48,18 @@ def webhook():
         log_buffer.append(f"[{timestamp}] BYBIT RESPONSE: {order}")
         print("Order response:", order)
 
-        # === Λήψη Τιμής ===
+        # === Get price if missing ===
         price = float(order['result'].get('orderPrice', 0))
         if price == 0:
             ticker = session.get_ticker(category="linear", symbol=symbol)
             price = float(ticker["result"]["list"][0]["lastPrice"])
 
-        # === Υπολογισμός TP & SL ===
+        # === Calculate TP/SL prices ===
         tp_price = round(price * (1 + TP_PERCENT / 100), 2) if side == "Buy" else round(price * (1 - TP_PERCENT / 100), 2)
         sl_price = round(price * (1 - SL_PERCENT / 100), 2) if side == "Buy" else round(price * (1 + SL_PERCENT / 100), 2)
         opposite_side = "Sell" if side == "Buy" else "Buy"
 
-        # === Take Profit ===
+        # === TP order ===
         tp = session.place_order(
             category="linear",
             symbol=symbol,
@@ -70,7 +71,7 @@ def webhook():
             reduce_only=True
         )
 
-        # === Stop Loss ===
+        # === SL order ===
         sl = session.place_order(
             category="linear",
             symbol=symbol,
@@ -82,7 +83,7 @@ def webhook():
             reduce_only=True
         )
 
-        log_buffer.append(f"[{timestamp}] TP @ {tp_price}, SL @ {sl_price}")
+        log_buffer.append(f"[{timestamp}] TP set @ {tp_price}, SL set @ {sl_price}")
         return jsonify({"status": "ok", "order": order}), 200
 
     except Exception as e:
@@ -95,6 +96,11 @@ def show_logs():
     if not log_buffer:
         return "No logs yet."
     return "<pre>" + "\n".join(log_buffer[-100:]) + "</pre>"
+
+@app.route('/clear_logs', methods=['GET'])
+def clear_logs():
+    log_buffer.clear()
+    return "🧹 Logs καθαρίστηκαν επιτυχώς!"
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5000)
