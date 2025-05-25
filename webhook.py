@@ -35,6 +35,7 @@ def webhook():
             qty=qty,
             time_in_force="GoodTillCancel"
         )
+        print("Bybit order sent:", response)
         print("Order response:", response)
         return jsonify({"status": "ok", "order": response}), 200
     except Exception as e:
