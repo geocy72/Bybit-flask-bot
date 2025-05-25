@@ -5,11 +5,11 @@ from datetime import datetime
 app = Flask(__name__)
 
 # === API KEYS ===
-BYBIT_API_KEY = "BbOKjCFtOMb6Gh01Gh"
-BYBIT_API_SECRET = "GbTnD3cQC1J4vj7WFf8Ahd247AEA8GFzjOAA"
+BYBIT_API_KEY = "YOUR_API_KEY"
+BYBIT_API_SECRET = "YOUR_API_SECRET"
 
 session = HTTP(
-    testnet=True,  # True για testnet
+    testnet=True,
     api_key=BYBIT_API_KEY,
     api_secret=BYBIT_API_SECRET
 )
@@ -17,9 +17,8 @@ session = HTTP(
 log_buffer = []
 
 # === Ρυθμίσεις ===
-TP_PERCENT = 3.0
 SL_PERCENT = 1.5
-MIN_QTY = 0.001  # ελάχιστο για BTCUSDT
+MIN_QTY = 0.001
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -37,13 +36,11 @@ def webhook():
         if qty < MIN_QTY:
             raise ValueError(f"Order qty {qty} is below Bybit minimum {MIN_QTY}")
 
-        # === Ακύρωση όλων ===
         if action == "cancel_all":
             result = session.cancel_all_orders(category="linear", symbol=symbol)
             log_buffer.append(f"[{timestamp}] CANCEL ALL → {result}")
             return jsonify({"status": "cancelled", "response": result}), 200
 
-        # === Κύρια εντολή (Buy/Sell) ===
         order = session.place_order(
             category="linear",
             symbol=symbol,
@@ -54,16 +51,13 @@ def webhook():
         )
         log_buffer.append(f"[{timestamp}] BYBIT RESPONSE: {order}")
 
-        # === Απόκτηση τιμής
         ticker = session.get_tickers(category="linear", symbol=symbol)
         price = float(ticker["result"]["list"][0]["lastPrice"])
 
-        # === Υπολογισμός μόνο SL (προαιρετικά TP later)
         sl_price = round(price * (1 - SL_PERCENT / 100), 2) if side == "Buy" else round(price * (1 + SL_PERCENT / 100), 2)
         opposite = "Sell" if side == "Buy" else "Buy"
         trigger_dir = 1 if side == "Buy" else 2
 
-        # === Stop Loss (triggered market)
         session.place_order(
             category="linear",
             symbol=symbol,
@@ -97,4 +91,5 @@ def clear_logs():
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5000)
+
 
