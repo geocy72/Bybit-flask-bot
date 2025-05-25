@@ -8,15 +8,18 @@ app = Flask(__name__)
 BYBIT_API_KEY = "BbOKjCFtOMb6Gh01Gh"
 BYBIT_API_SECRET = "GbTnD3cQC1J4vj7WFf8Ahd247AEA8GFzjOAA"
 
-# === Bybit Client ===
 session = HTTP(
-    testnet=True,  # True για testnet, False για live
+    testnet=True,  # True = testnet, False = live
     api_key=BYBIT_API_KEY,
     api_secret=BYBIT_API_SECRET
 )
 
-# === Internal log buffer ===
+# === Logging buffer ===
 log_buffer = []
+
+# === TP/SL ΡΥΘΜΙΣΕΙΣ ===
+TP_PERCENT = 3.0    # % πάνω από τιμή εισόδου
+SL_PERCENT = 1.5    # % κάτω από τιμή εισόδου
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -32,7 +35,8 @@ def webhook():
     side = "Buy" if action == "buy" else "Sell"
 
     try:
-        response = session.place_order(
+        # === Άνοιγμα θέσης ===
+        order = session.place_order(
             category="linear",
             symbol=symbol,
             side=side,
@@ -40,9 +44,47 @@ def webhook():
             qty=qty,
             time_in_force="GoodTillCancel"
         )
-        log_buffer.append(f"[{timestamp}] BYBIT RESPONSE: {response}")
-        print("Order response:", response)
-        return jsonify({"status": "ok", "order": response}), 200
+        log_buffer.append(f"[{timestamp}] BYBIT RESPONSE: {order}")
+        print("Order response:", order)
+
+        # === Λήψη Τιμής ===
+        price = float(order['result'].get('orderPrice', 0))
+        if price == 0:
+            ticker = session.get_ticker(category="linear", symbol=symbol)
+            price = float(ticker["result"]["list"][0]["lastPrice"])
+
+        # === Υπολογισμός TP & SL ===
+        tp_price = round(price * (1 + TP_PERCENT / 100), 2) if side == "Buy" else round(price * (1 - TP_PERCENT / 100), 2)
+        sl_price = round(price * (1 - SL_PERCENT / 100), 2) if side == "Buy" else round(price * (1 + SL_PERCENT / 100), 2)
+        opposite_side = "Sell" if side == "Buy" else "Buy"
+
+        # === Take Profit ===
+        tp = session.place_order(
+            category="linear",
+            symbol=symbol,
+            side=opposite_side,
+            order_type="Limit",
+            price=tp_price,
+            qty=qty,
+            time_in_force="GoodTillCancel",
+            reduce_only=True
+        )
+
+        # === Stop Loss ===
+        sl = session.place_order(
+            category="linear",
+            symbol=symbol,
+            side=opposite_side,
+            order_type="StopMarket",
+            stop_px=sl_price,
+            qty=qty,
+            time_in_force="GoodTillCancel",
+            reduce_only=True
+        )
+
+        log_buffer.append(f"[{timestamp}] TP @ {tp_price}, SL @ {sl_price}")
+        return jsonify({"status": "ok", "order": order}), 200
+
     except Exception as e:
         log_buffer.append(f"[{timestamp}] ERROR: {str(e)}")
         print("Error placing order:", str(e))
@@ -59,5 +101,5 @@ if __name__ == '__main__':
 
 
 
-if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5000)
+
+
