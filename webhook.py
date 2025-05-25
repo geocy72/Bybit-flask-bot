@@ -5,8 +5,8 @@ from datetime import datetime
 app = Flask(__name__)
 
 # === API KEYS ===
-BYBIT_API_KEY = "ZRyWx3GREmB9LQET4u"
-BYBIT_API_SECRET = "FzvPkH7tPuyDDZs0c7AAAskl1srtTvD4l8In"
+BYBIT_API_KEY = "BbOKjCFtOMb6Gh01Gh"
+BYBIT_API_SECRET = "GbTnD3cQC1J4vj7WFf8Ahd247AEA8GFzjOAA"
 
 # === Bybit Client ===
 session = HTTP(
