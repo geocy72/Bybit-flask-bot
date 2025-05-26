@@ -10,7 +10,7 @@ BYBIT_API_SECRET = "GbTnD3cQC1J4vj7WFf8Ahd247AEA8GFzjOAA"
 
 # === Bybit Client ===
 session = HTTP(
-    testnet=True,  # True για testnet, False για live
+    testnet=False,  # True για testnet, False για live
     api_key=BYBIT_API_KEY,
     api_secret=BYBIT_API_SECRET
 )
