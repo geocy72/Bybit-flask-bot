@@ -1,12 +1,24 @@
 from flask import Flask, request, jsonify
+from pybit.unified_trading import HTTP
 from datetime import datetime
 
 app = Flask(__name__)
 log_buffer = []
 
+# === LIVE API KEYS ===
+BYBIT_API_KEY = "BbOKjCFtOMb6Gh01Gh"
+BYBIT_API_SECRET = "GbTnD3cQC1J4vj7WFf8Ahd247AEA8GFzjOAA"
+
+# === Bybit Client (LIVE) ===
+session = HTTP(
+    testnet=False,
+    api_key=BYBIT_API_KEY,
+    api_secret=BYBIT_API_SECRET
+)
+
 @app.route('/')
 def index():
-    return "✅ Webhook bot is live."
+    return "✅ Live trading bot is active."
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -15,13 +27,32 @@ def webhook():
         data = request.json
         log_buffer.append(f"[{timestamp}] ALERT RECEIVED: {data}")
         print("Received alert:", data)
-        return jsonify({"status": "received"}), 200
+
+        action = data.get("action")
+        symbol = data.get("symbol")
+        qty = float(data.get("qty"))
+        order_type = data.get("type", "market").lower()
+        side = "Buy" if action == "buy" else "Sell"
+
+        response = session.place_order(
+            category="linear",
+            symbol=symbol,
+            side=side,
+            order_type=order_type.upper(),
+            qty=qty,
+            time_in_force="GoodTillCancel"
+        )
+        log_buffer.append(f"[{timestamp}] BYBIT RESPONSE: {response}")
+        print("Order response:", response)
+        return jsonify({"status": "ok", "order": str(response)}), 200
+
     except Exception as e:
-        log_buffer.append(f"[{timestamp}] ERROR PARSING ALERT: {str(e)}")
+        log_buffer.append(f"[{timestamp}] ERROR: {str(e)}")
+        print("Error placing order:", str(e))
         return jsonify({"status": "error", "message": str(e)}), 400
 
 @app.route('/logs', methods=['GET'])
-def logs():
+def show_logs():
     if not log_buffer:
         return "No logs yet."
     return "<pre>" + "\n".join(log_buffer[-100:]) + "</pre>"
