@@ -6,8 +6,8 @@ app = Flask(__name__)
 log_buffer = []
 
 # === LIVE API KEYS ===
-BYBIT_API_KEY = "BbOKjCFtOMb6Gh01Gh"
-BYBIT_API_SECRET = "GbTnD3cQC1J4vj7WFf8Ahd247AEA8GFzjOAA"
+BYBIT_API_KEY = "WyVIgoI5owoUA0RLWV"
+BYBIT_API_SECRET = "dEby2nhJ2WfvBzUQRS4EK2zXKx5ttn2Kh8uS"
 
 # === Bybit Client (LIVE) ===
 session = HTTP(
