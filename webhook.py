@@ -1,10 +1,10 @@
 from flask import Flask, request, jsonify
 from pybit.unified_trading import HTTP
 from datetime import datetime
+import math
 
 app = Flask(__name__)
 
-# === API KEYS ===
 BYBIT_API_KEY = "ZRyWx3GREmB9LQET4u"
 BYBIT_API_SECRET = "FzvPkH7tPuyDDZs0c7AAAskl1srtTvD4l8In"
 
@@ -19,6 +19,16 @@ log_buffer = []
 # === Ρυθμίσεις ===
 SL_PERCENT = 1.5
 MIN_QTY = 0.001
+STEP_SIZE = {
+    "SUIUSDT": 0.1,
+    "BTCUSDT": 0.001,
+    "ETHUSDT": 0.001
+    # Πρόσθεσε κι άλλα σύμβολα αν χρειαστεί
+}
+
+def round_qty_to_step(symbol, qty):
+    step = STEP_SIZE.get(symbol.upper(), 0.001)
+    return math.floor(qty / step) * step
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -28,10 +38,12 @@ def webhook():
 
     try:
         action = data.get("action")
-        symbol = data.get("symbol")
-        qty = float(data.get("qty"))
+        symbol = data.get("symbol").upper()
+        qty_raw = float(data.get("qty"))
         order_type = data.get("type", "market").lower()
         side = "Buy" if action == "buy" else "Sell"
+
+        qty = round_qty_to_step(symbol, qty_raw)
 
         if qty < MIN_QTY:
             raise ValueError(f"Order qty {qty} is below Bybit minimum {MIN_QTY}")
@@ -91,5 +103,3 @@ def clear_logs():
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5000)
-
- 
