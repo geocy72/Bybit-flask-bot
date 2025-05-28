@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from pybit.unified_trading import HTTP
 from datetime import datetime
+import math
 
 app = Flask(__name__)
 
@@ -17,14 +18,19 @@ session = HTTP(
 log_buffer = []
 
 # === Ρυθμίσεις ===
-TRAILING_STOP_PERCENT = 2.0
+TRAILING_PERCENT = 2.0
 MIN_QTY = 0.001
-SYMBOL_DECIMALS = {
+
+# === Symbol precision (επεκτάσιμο) ===
+symbol_precisions = {
     "BTCUSDT": 3,
     "ETHUSDT": 3,
-    "SUIUSDT": 2,
-    "SOLUSDT": 2
+    "SUIUSDT": 0
 }
+
+def round_qty(symbol, qty):
+    precision = symbol_precisions.get(symbol.upper(), 3)
+    return round(qty, precision)
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -35,22 +41,19 @@ def webhook():
     try:
         action = data.get("action")
         symbol = data.get("symbol").upper()
-        raw_qty = float(data.get("qty"))
-        decimals = SYMBOL_DECIMALS.get(symbol, 3)
-        qty = round(raw_qty, decimals)
+        qty = float(data.get("qty"))
+        qty = round_qty(symbol, qty)
         order_type = data.get("type", "market").lower()
         side = "Buy" if action == "buy" else "Sell"
 
         if qty < MIN_QTY:
-            raise ValueError(f"Order qty {qty} is below minimum {MIN_QTY}")
+            raise ValueError(f"Order qty {qty} is below Bybit minimum {MIN_QTY}")
 
-        # Cancel all
         if action == "cancel_all":
             result = session.cancel_all_orders(category="linear", symbol=symbol)
             log_buffer.append(f"[{timestamp}] CANCEL ALL → {result}")
             return jsonify({"status": "cancelled", "response": result}), 200
 
-        # Place main order
         order = session.place_order(
             category="linear",
             symbol=symbol,
@@ -61,25 +64,20 @@ def webhook():
         )
         log_buffer.append(f"[{timestamp}] BYBIT RESPONSE: {order}")
 
-        # Trailing Stop (μόνο για Buy)
-        if side == "Buy":
-            ticker = session.get_tickers(category="linear", symbol=symbol)
-            price = float(ticker["result"]["list"][0]["lastPrice"])
-            trail_value = round(price * (TRAILING_STOP_PERCENT / 100), 4)
-
-            trail_order = session.place_order(
-                category="linear",
-                symbol=symbol,
-                side="Sell",
-                order_type="TrailingStopMarket",
-                qty=qty,
-                time_in_force="GoodTillCancel",
-                reduce_only=True,
-                trailing_stop=trail_value,
-                trigger_by="LastPrice"
-            )
-            log_buffer.append(f"[{timestamp}] TRAILING STOP SET: {trail_order}")
-
+        # === Trailing Stop ===
+        opposite = "Sell" if side == "Buy" else "Buy"
+        trail_order = session.place_order(
+            category="linear",
+            symbol=symbol,
+            side=opposite,
+            order_type="TrailingStopMarket",
+            qty=qty,
+            time_in_force="GoodTillCancel",
+            reduce_only=True,
+            trigger_by="LastPrice",
+            trailing_stop=str(TRAILING_PERCENT)
+        )
+        log_buffer.append(f"[{timestamp}] TRAILING STOP @ -{TRAILING_PERCENT}% → {trail_order}")
         return jsonify({"status": "ok", "order": order}), 200
 
     except Exception as e:
