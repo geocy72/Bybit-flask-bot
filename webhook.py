@@ -1,10 +1,10 @@
 from flask import Flask, request, jsonify
 from pybit.unified_trading import HTTP
 from datetime import datetime
-import math
 
 app = Flask(__name__)
 
+# === API KEYS ===
 BYBIT_API_KEY = "ZRyWx3GREmB9LQET4u"
 BYBIT_API_SECRET = "FzvPkH7tPuyDDZs0c7AAAskl1srtTvD4l8In"
 
@@ -18,17 +18,18 @@ log_buffer = []
 
 # === Ρυθμίσεις ===
 SL_PERCENT = 1.5
-MIN_QTY = 0.001
-STEP_SIZE = {
+
+# === Βοηθητική συνάρτηση για στρογγυλοποίηση με βάση το step size ===
+def round_step(value, step):
+    return round(round(value / step) * step, 8)
+
+# Step size για σύμβολα
+step_sizes = {
     "SUIUSDT": 0.1,
     "BTCUSDT": 0.001,
-    "ETHUSDT": 0.001
-    # Πρόσθεσε κι άλλα σύμβολα αν χρειαστεί
+    "ETHUSDT": 0.001,
+    # πρόσθεσε και άλλα σύμβολα εδώ
 }
-
-def round_qty_to_step(symbol, qty):
-    step = STEP_SIZE.get(symbol.upper(), 0.001)
-    return math.floor(qty / step) * step
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -39,14 +40,15 @@ def webhook():
     try:
         action = data.get("action")
         symbol = data.get("symbol").upper()
-        qty_raw = float(data.get("qty"))
+        raw_qty = float(data.get("qty"))
         order_type = data.get("type", "market").lower()
         side = "Buy" if action == "buy" else "Sell"
 
-        qty = round_qty_to_step(symbol, qty_raw)
+        step_size = step_sizes.get(symbol, 0.001)
+        qty = round_step(raw_qty, step_size)
 
-        if qty < MIN_QTY:
-            raise ValueError(f"Order qty {qty} is below Bybit minimum {MIN_QTY}")
+        if qty <= 0:
+            raise ValueError(f"Order qty {qty} is invalid or below minimum step size.")
 
         if action == "cancel_all":
             result = session.cancel_all_orders(category="linear", symbol=symbol)
