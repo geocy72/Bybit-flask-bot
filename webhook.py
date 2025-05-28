@@ -9,7 +9,7 @@ BYBIT_API_KEY = "BbOKjCFtOMb6Gh01Gh"
 BYBIT_API_SECRET = "GbTnD3cQC1J4vj7WFf8Ahd247AEA8GFzjOAA"
 
 session = HTTP(
-    testnet=True,
+    testnet=False,
     api_key=BYBIT_API_KEY,
     api_secret=BYBIT_API_SECRET
 )
