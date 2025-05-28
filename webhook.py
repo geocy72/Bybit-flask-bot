@@ -18,18 +18,7 @@ log_buffer = []
 
 # === Ρυθμίσεις ===
 SL_PERCENT = 1.5
-
-# === Βοηθητική συνάρτηση για στρογγυλοποίηση με βάση το step size ===
-def round_step(value, step):
-    return round(round(value / step) * step, 8)
-
-# Step size για σύμβολα
-step_sizes = {
-    "SUIUSDT": 0.1,
-    "BTCUSDT": 0.001,
-    "ETHUSDT": 0.001,
-    # πρόσθεσε και άλλα σύμβολα εδώ
-}
+MIN_QTY = 0.001
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -40,22 +29,21 @@ def webhook():
     try:
         action = data.get("action")
         symbol = data.get("symbol").upper()
-        raw_qty = float(data.get("qty"))
+        qty = float(data.get("qty"))
         order_type = data.get("type", "market").lower()
         side = "Buy" if action == "buy" else "Sell"
 
-        step_size = step_sizes.get(symbol, 0.001)
-        qty = round_step(raw_qty, step_size)
+        if qty < MIN_QTY:
+            raise ValueError(f"Order qty {qty} is below Bybit minimum {MIN_QTY}")
 
-        if qty <= 0:
-            raise ValueError(f"Order qty {qty} is invalid or below minimum step size.")
-
+        # Cancel all orders
         if action == "cancel_all":
             result = session.cancel_all_orders(category="linear", symbol=symbol)
             log_buffer.append(f"[{timestamp}] CANCEL ALL → {result}")
             return jsonify({"status": "cancelled", "response": result}), 200
 
-        order = session.place_order(
+        # Place order
+        response = session.place_order(
             category="linear",
             symbol=symbol,
             side=side,
@@ -63,30 +51,35 @@ def webhook():
             qty=qty,
             time_in_force="GoodTillCancel"
         )
-        log_buffer.append(f"[{timestamp}] BYBIT RESPONSE: {order}")
+        log_buffer.append(f"[{timestamp}] BYBIT RESPONSE: {response}")
 
+        # Get last price
         ticker = session.get_tickers(category="linear", symbol=symbol)
         price = float(ticker["result"]["list"][0]["lastPrice"])
 
-        sl_price = round(price * (1 - SL_PERCENT / 100), 2) if side == "Buy" else round(price * (1 + SL_PERCENT / 100), 2)
+        # Calculate SL
+        sl_price = round(price * (1 - SL_PERCENT / 100), 4) if side == "Buy" else round(price * (1 + SL_PERCENT / 100), 4)
         opposite = "Sell" if side == "Buy" else "Buy"
-        trigger_dir = 1 if side == "Buy" else 2
+        trigger_dir = 2 if side == "Buy" else 1
+        qty_rounded = round(qty, 2)
 
-        session.place_order(
+        # Place SL order
+        sl_order = session.place_order(
             category="linear",
             symbol=symbol,
             side=opposite,
             order_type="Market",
-            qty=qty,
+            qty=qty_rounded,
             time_in_force="GoodTillCancel",
             reduce_only=True,
             trigger_by="LastPrice",
             triggerPrice=sl_price,
             triggerDirection=trigger_dir
         )
-
         log_buffer.append(f"[{timestamp}] SL set @ {sl_price}")
-        return jsonify({"status": "ok", "order": order}), 200
+        log_buffer.append(f"[{timestamp}] SL ORDER → {sl_order}")
+
+        return jsonify({"status": "ok", "order": response}), 200
 
     except Exception as e:
         log_buffer.append(f"[{timestamp}] ERROR: {str(e)}")
