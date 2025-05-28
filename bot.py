@@ -2,8 +2,8 @@ from flask import Flask, request, jsonify
 from pybit.unified_trading import HTTP
 
 # === API KEYS ===
-BYBIT_API_KEY = "BbOKjCFtOMb6Gh01Gh"
-BYBIT_API_SECRET = "GbTnD3cQC1J4vj7WFf8Ahd247AEA8GFzjOAA"
+BYBIT_API_KEY = "ZRyWx3GREmB9LQET4u"
+BYBIT_API_SECRET = "FzvPkH7tPuyDDZs0c7AAAskl1srtTvD4l8In"
 
 # === Bybit Client ===
 session = HTTP(
