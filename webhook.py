@@ -1,3 +1,4 @@
+
 from flask import Flask, request, jsonify
 from pybit.unified_trading import HTTP
 from datetime import datetime
@@ -17,17 +18,17 @@ session = HTTP(
 log_buffer = []
 
 # === Ρυθμίσεις ===
-TRAILING_PERCENT = 2.0  # % trailing stop
+TRAILING_PERCENT = 2.0
+STATIC_QTY = 25
 MIN_QTY = 0.001
 
-# === Εύρεση σωστού stepSize για το σύμβολο ===
 def get_step_size(symbol):
     try:
         info = session.get_instruments_info(category="linear", symbol=symbol)
         return float(info["result"]["list"][0]["lotSizeFilter"]["qtyStep"])
     except Exception as e:
         log_buffer.append(f"[ERROR] Could not get step size: {e}")
-        return 0.01  # default
+        return 0.01
 
 def round_qty(qty, step):
     precision = abs(str(step)[::-1].find('.'))
@@ -42,7 +43,6 @@ def webhook():
 
         action = data.get("action")
         symbol = data.get("symbol")
-        qty = float(data.get("qty"))
         order_type = data.get("type", "market").lower()
         side = "Buy" if action == "buy" else "Sell"
 
@@ -51,14 +51,9 @@ def webhook():
             log_buffer.append(f"[{timestamp}] CANCEL ALL → {result}")
             return jsonify({"status": "cancelled", "response": result}), 200
 
-        if qty < MIN_QTY:
-            raise ValueError(f"Order qty {qty} is below Bybit minimum {MIN_QTY}")
-
-        # Στρογγυλοποίηση qty
         step = get_step_size(symbol)
-        qty_rounded = round_qty(qty, step)
+        qty_rounded = round_qty(STATIC_QTY, step)
 
-        # Κύρια εντολή αγοράς ή πώλησης
         main_order = session.place_order(
             category="linear",
             symbol=symbol,
@@ -69,7 +64,6 @@ def webhook():
         )
         log_buffer.append(f"[{timestamp}] BYBIT RESPONSE: {main_order}")
 
-        # Trailing Stop
         trailing_order = session.place_order(
             category="linear",
             symbol=symbol,
@@ -89,10 +83,6 @@ def webhook():
         log_buffer.append(f"[{timestamp}] ERROR: {str(e)}")
         return jsonify({"status": "error", "message": str(e)}), 400
 
-@app.route('/', methods=['GET'])
-def status():
-    return "✅ Webhook Bot is running!"
-
 @app.route('/logs', methods=['GET'])
 def show_logs():
     return "<pre>" + "\n".join(log_buffer[-100:]) + "</pre>"
@@ -102,6 +92,9 @@ def clear_logs():
     log_buffer.clear()
     return "🧹 Logs καθαρίστηκαν."
 
-    if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5000, debug=True)
-    
+@app.route('/', methods=['GET'])
+def status():
+    return "✅ Webhook Bot is running!"
+
+if __name__ == '__main__':
+    app.run(host="0.0.0.0", port=5000)
