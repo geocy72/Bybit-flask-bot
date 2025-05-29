@@ -1,11 +1,10 @@
-
 from flask import Flask, request, jsonify
 from pybit.unified_trading import HTTP
 from datetime import datetime
 
 app = Flask(__name__)
 
-# === LIVE BYBIT API KEYS ===
+# === BYBIT LIVE API KEYS ===
 BYBIT_API_KEY = "ZRyWx3GREmB9LQET4u"
 BYBIT_API_SECRET = "FzvPkH7tPuyDDZs0c7AAAskl1srtTvD4l8In"
 
@@ -15,13 +14,15 @@ session = HTTP(
     api_secret=BYBIT_API_SECRET
 )
 
+# === LOGGING ===
 log_buffer = []
 
-# === Ρυθμίσεις ===
-TRAILING_PERCENT = 2.0
-STATIC_QTY = 25
+# === CONFIG ===
+TRAILING_STOP_USD = 2.0  # $ trailing distance
+FIXED_QTY = 25.0
 MIN_QTY = 0.001
 
+# === GET STEP SIZE ===
 def get_step_size(symbol):
     try:
         info = session.get_instruments_info(category="linear", symbol=symbol)
@@ -51,9 +52,13 @@ def webhook():
             log_buffer.append(f"[{timestamp}] CANCEL ALL → {result}")
             return jsonify({"status": "cancelled", "response": result}), 200
 
-        step = get_step_size(symbol)
-        qty_rounded = round_qty(STATIC_QTY, step)
+        if FIXED_QTY < MIN_QTY:
+            raise ValueError(f"Order qty {FIXED_QTY} is below Bybit minimum {MIN_QTY}")
 
+        step = get_step_size(symbol)
+        qty_rounded = round_qty(FIXED_QTY, step)
+
+        # MAIN ORDER
         main_order = session.place_order(
             category="linear",
             symbol=symbol,
@@ -62,26 +67,31 @@ def webhook():
             qty=qty_rounded,
             time_in_force="GoodTillCancel"
         )
-        log_buffer.append(f"[{timestamp}] BYBIT RESPONSE: {main_order}")
+        log_buffer.append(f"[{timestamp}] MAIN ORDER → {main_order}")
 
+        # TRAILING STOP ORDER
         trailing_order = session.place_order(
             category="linear",
             symbol=symbol,
             side="Sell" if side == "Buy" else "Buy",
-            order_type="TrailingStopMarket",
+            order_type="Market",
             qty=qty_rounded,
             time_in_force="GoodTillCancel",
             reduce_only=True,
             trigger_by="LastPrice",
-            trailing_stop=str(TRAILING_PERCENT)
+            trailing_stop=str(TRAILING_STOP_USD)
         )
-        log_buffer.append(f"[{timestamp}] TRAILING STOP SET @ -{TRAILING_PERCENT}%")
+        log_buffer.append(f"[{timestamp}] TRAILING STOP SET → {trailing_order}")
 
         return jsonify({"status": "ok", "order": main_order}), 200
 
     except Exception as e:
         log_buffer.append(f"[{timestamp}] ERROR: {str(e)}")
         return jsonify({"status": "error", "message": str(e)}), 400
+
+@app.route('/', methods=['GET'])
+def status():
+    return "✅ Webhook Bot is running."
 
 @app.route('/logs', methods=['GET'])
 def show_logs():
@@ -90,12 +100,7 @@ def show_logs():
 @app.route('/clear_logs', methods=['GET'])
 def clear_logs():
     log_buffer.clear()
-    return "🧹 Logs καθαρίστηκαν."
-
-@app.route('/', methods=['GET'])
-def status():
-    return "✅ Webhook Bot is running!"
+    return "🧹 Logs cleared."
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5000)
-    
