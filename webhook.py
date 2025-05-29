@@ -14,7 +14,7 @@ session = HTTP(
 )
 
 # === Configuration ===
-FIXED_QTY = 25  # Always use 25 units
+FIXED_QTY = 30  # Always use 25 units
 TRAILING_PERCENT = 2.0  # Trailing stop loss in percent
 log_buffer = []
 
