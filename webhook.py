@@ -1,15 +1,13 @@
 from flask import Flask, request, jsonify
 from pybit.unified_trading import HTTP
 from datetime import datetime
-import math
 
 app = Flask(__name__)
 
-# === API KEYS ===
+# === LIVE BYBIT API KEYS ===
 BYBIT_API_KEY = "ZRyWx3GREmB9LQET4u"
 BYBIT_API_SECRET = "FzvPkH7tPuyDDZs0c7AAAskl1srtTvD4l8In"
 
-# === Bybit Client ===
 session = HTTP(
     testnet=False,
     api_key=BYBIT_API_KEY,
@@ -18,30 +16,33 @@ session = HTTP(
 
 log_buffer = []
 
-# === Trailing Stop Settings ===
-TRAILING_STOP_PERCENT = 2.0
+# === Ρυθμίσεις ===
+TRAILING_PERCENT = 2.0  # % trailing stop
+MIN_QTY = 0.001
 
-def round_qty(symbol, qty):
+# === Εύρεση σωστού stepSize για το σύμβολο ===
+def get_step_size(symbol):
     try:
         info = session.get_instruments_info(category="linear", symbol=symbol)
-        step_size = float(info["result"]["list"][0]["lotSizeFilter"]["qtyStep"])
-        precision = abs(int(round(math.log10(step_size))))
-        return round(qty, precision)
+        return float(info["result"]["list"][0]["lotSizeFilter"]["qtyStep"])
     except Exception as e:
-        log_buffer.append(f"[{datetime.utcnow()}] ERROR fetching step size: {e}")
-        return qty
+        log_buffer.append(f"[ERROR] Could not get step size: {e}")
+        return 0.01  # default
+
+def round_qty(qty, step):
+    precision = abs(str(step)[::-1].find('.'))
+    return round(qty, precision)
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
+    timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
     try:
-        data = request.json
-        timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        data = request.get_json(force=True)
         log_buffer.append(f"[{timestamp}] ALERT RECEIVED: {data}")
 
         action = data.get("action")
         symbol = data.get("symbol")
-        raw_qty = float(data.get("qty"))
-        qty = round_qty(symbol, raw_qty)
+        qty = float(data.get("qty"))
         order_type = data.get("type", "market").lower()
         side = "Buy" if action == "buy" else "Sell"
 
@@ -50,48 +51,56 @@ def webhook():
             log_buffer.append(f"[{timestamp}] CANCEL ALL → {result}")
             return jsonify({"status": "cancelled", "response": result}), 200
 
-        # === Primary Order ===
-        order = session.place_order(
+        if qty < MIN_QTY:
+            raise ValueError(f"Order qty {qty} is below Bybit minimum {MIN_QTY}")
+
+        # Στρογγυλοποίηση qty
+        step = get_step_size(symbol)
+        qty_rounded = round_qty(qty, step)
+
+        # Κύρια εντολή αγοράς ή πώλησης
+        main_order = session.place_order(
             category="linear",
             symbol=symbol,
             side=side,
             order_type=order_type.upper(),
-            qty=qty,
+            qty=qty_rounded,
             time_in_force="GoodTillCancel"
         )
-        log_buffer.append(f"[{timestamp}] BYBIT ORDER RESPONSE: {order}")
+        log_buffer.append(f"[{timestamp}] BYBIT RESPONSE: {main_order}")
 
-        # === Trailing Stop
-        opposite = "Sell" if side == "Buy" else "Buy"
-        trailing_stop = str(TRAILING_STOP_PERCENT)
-        ts_order = session.place_order(
+        # Trailing Stop
+        trailing_order = session.place_order(
             category="linear",
             symbol=symbol,
-            side=opposite,
+            side="Sell" if side == "Buy" else "Buy",
             order_type="TrailingStopMarket",
-            qty=qty,
+            qty=qty_rounded,
             time_in_force="GoodTillCancel",
             reduce_only=True,
             trigger_by="LastPrice",
-            trailing_stop=trailing_stop
+            trailing_stop=str(TRAILING_PERCENT)
         )
-        log_buffer.append(f"[{timestamp}] TRAILING STOP -{TRAILING_STOP_PERCENT}% SET → {ts_order}")
+        log_buffer.append(f"[{timestamp}] TRAILING STOP SET @ -{TRAILING_PERCENT}%")
 
-        return jsonify({"status": "ok", "order": order, "trailing_stop": ts_order}), 200
+        return jsonify({"status": "ok", "order": main_order}), 200
 
     except Exception as e:
-        error_msg = f"[{datetime.utcnow()}] ERROR: {str(e)}"
-        log_buffer.append(error_msg)
+        log_buffer.append(f"[{timestamp}] ERROR: {str(e)}")
         return jsonify({"status": "error", "message": str(e)}), 400
 
+@app.route('/', methods=['GET'])
+def status():
+    return "✅ Webhook Bot is running!"
+
 @app.route('/logs', methods=['GET'])
-def logs():
+def show_logs():
     return "<pre>" + "\n".join(log_buffer[-100:]) + "</pre>"
 
 @app.route('/clear_logs', methods=['GET'])
-def clear():
+def clear_logs():
     log_buffer.clear()
-    return "🧹 Logs cleared."
+    return "🧹 Logs καθαρίστηκαν."
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5000)
