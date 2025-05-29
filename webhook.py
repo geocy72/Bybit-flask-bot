@@ -4,7 +4,7 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-# === BYBIT LIVE API KEYS ===
+# === LIVE API KEYS ===
 BYBIT_API_KEY = "ZRyWx3GREmB9LQET4u"
 BYBIT_API_SECRET = "FzvPkH7tPuyDDZs0c7AAAskl1srtTvD4l8In"
 
@@ -14,26 +14,11 @@ session = HTTP(
     api_secret=BYBIT_API_SECRET
 )
 
-# === LOGGING ===
 log_buffer = []
 
-# === CONFIG ===
-TRAILING_STOP_USD = 2.0  # $ trailing distance
-FIXED_QTY = 25.0
+# === Ρυθμίσεις ===
+FIXED_QTY = 25  # σταθερή ποσότητα
 MIN_QTY = 0.001
-
-# === GET STEP SIZE ===
-def get_step_size(symbol):
-    try:
-        info = session.get_instruments_info(category="linear", symbol=symbol)
-        return float(info["result"]["list"][0]["lotSizeFilter"]["qtyStep"])
-    except Exception as e:
-        log_buffer.append(f"[ERROR] Could not get step size: {e}")
-        return 0.01
-
-def round_qty(qty, step):
-    precision = abs(str(step)[::-1].find('.'))
-    return round(qty, precision)
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -47,43 +32,24 @@ def webhook():
         order_type = data.get("type", "market").lower()
         side = "Buy" if action == "buy" else "Sell"
 
+        # Ακύρωση
         if action == "cancel_all":
             result = session.cancel_all_orders(category="linear", symbol=symbol)
             log_buffer.append(f"[{timestamp}] CANCEL ALL → {result}")
             return jsonify({"status": "cancelled", "response": result}), 200
 
-        if FIXED_QTY < MIN_QTY:
-            raise ValueError(f"Order qty {FIXED_QTY} is below Bybit minimum {MIN_QTY}")
-
-        step = get_step_size(symbol)
-        qty_rounded = round_qty(FIXED_QTY, step)
-
-        # MAIN ORDER
-        main_order = session.place_order(
+        # Απλή εντολή αγοράς/πώλησης
+        order = session.place_order(
             category="linear",
             symbol=symbol,
             side=side,
             order_type=order_type.upper(),
-            qty=qty_rounded,
+            qty=FIXED_QTY,
             time_in_force="GoodTillCancel"
         )
-        log_buffer.append(f"[{timestamp}] MAIN ORDER → {main_order}")
 
-        # TRAILING STOP ORDER
-        trailing_order = session.place_order(
-            category="linear",
-            symbol=symbol,
-            side="Sell" if side == "Buy" else "Buy",
-            order_type="Market",
-            qty=qty_rounded,
-            time_in_force="GoodTillCancel",
-            reduce_only=True,
-            trigger_by="LastPrice",
-            trailing_stop=str(TRAILING_STOP_USD)
-        )
-        log_buffer.append(f"[{timestamp}] TRAILING STOP SET → {trailing_order}")
-
-        return jsonify({"status": "ok", "order": main_order}), 200
+        log_buffer.append(f"[{timestamp}] BYBIT ORDER RESPONSE: {order}")
+        return jsonify({"status": "ok", "order": order}), 200
 
     except Exception as e:
         log_buffer.append(f"[{timestamp}] ERROR: {str(e)}")
@@ -91,7 +57,7 @@ def webhook():
 
 @app.route('/', methods=['GET'])
 def status():
-    return "✅ Webhook Bot is running."
+    return "✅ Webhook Bot is running!"
 
 @app.route('/logs', methods=['GET'])
 def show_logs():
@@ -100,7 +66,7 @@ def show_logs():
 @app.route('/clear_logs', methods=['GET'])
 def clear_logs():
     log_buffer.clear()
-    return "🧹 Logs cleared."
+    return "🧹 Logs καθαρίστηκαν."
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5000)
