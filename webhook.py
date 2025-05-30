@@ -40,11 +40,13 @@ def round_qty_to_step(qty, step):
 def monitor_price_and_set_trailing_stop(symbol, entry_price, side, qty):
     target_price = entry_price * (1 + TRIGGER_PERCENT / 100)
     trailing_side = "Sell" if side == "Buy" else "Buy"
+    log_buffer.append(f"[Trailing] Monitoring {symbol}, Entry: {entry_price}, Target: {target_price}, Side: {side}")
 
     while True:
         try:
             ticker = session.get_tickers(category="linear", symbol=symbol)
             last_price = float(ticker["result"]["list"][0]["lastPrice"])
+            log_buffer.append(f"[Trailing] Last Price: {last_price}")
 
             if (side == "Buy" and last_price >= target_price) or \
                (side == "Sell" and last_price <= entry_price * (1 - TRIGGER_PERCENT / 100)):
@@ -84,11 +86,9 @@ def webhook():
         order_type = data.get("type", "market").capitalize()
         raw_qty = float(data.get("qty", 25))
 
-        # Round qty to stepSize
         step = get_step_size(symbol)
         qty = round_qty_to_step(raw_qty, step)
 
-        # Place market order
         order_response = session.place_order(
             category="linear",
             symbol=symbol,
@@ -99,11 +99,9 @@ def webhook():
         )
         log_buffer.append(f"[{timestamp}] PRIMARY ORDER RESPONSE: {order_response}")
 
-        # Get entry price
         ticker = session.get_tickers(category="linear", symbol=symbol)
         entry_price = float(ticker["result"]["list"][0]["lastPrice"])
 
-        # Start trailing monitor
         thread = threading.Thread(target=monitor_price_and_set_trailing_stop, args=(symbol, entry_price, side, qty))
         thread.start()
 
